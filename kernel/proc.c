@@ -128,7 +128,7 @@ found:
   // PROJECT MODIFICATION:
   // Assign a priority value to each process.
   // This value is later used by the Priority Scheduler.
-  p->priority = p->pid % 10;
+  p->priority = 5;
 
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
