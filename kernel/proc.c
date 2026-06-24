@@ -125,6 +125,11 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
+  // PROJECT MODIFICATION:
+  // Assign a priority value to each process.
+  // This value is later used by the Priority Scheduler.
+  p->priority = p->pid % 10;
+
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
     freeproc(p);
@@ -414,42 +419,136 @@ kwait(uint64 addr)
   }
 }
 
+/*
+// Per-CPU process scheduler.
+ // Each CPU calls scheduler() after setting itself up.
+ // Scheduler never returns. It loops, doing:
+ // - choose a process to run.
+ // - swtch to start running that process.
+ // - eventually that process transfers control
+ // via swtch back to the scheduler.
+ void
+ scheduler(void)
+ {
+ struct proc *p;
+ struct cpu *c = mycpu();
+ 
+ c->proc = 0;
+ for (;;) {
+ // The most recent process to run may have had interrupts
+ // turned off; enable them to avoid a deadlock if all
+ // processes are waiting. Then turn them back off
+ // to avoid a possible race between an interrupt
+ // and wfi.
+ intr_on();
+ intr_off();
+ 
+ int found = 0;
+ for (p = proc; p < &proc[NPROC]; p++) {
+ acquire(&p->lock);
+ if (p->state == RUNNABLE) {
+ // Switch to chosen process. It is the process's job
+ // to release its lock and then reacquire it
+ // before jumping back to us.
+ p->state = RUNNING;
+ c->proc = p;
+ swtch(&c->context, &p->context);
+ 
+ // Process is done running for now.
+ // It should have changed its p->state before coming back.
+ c->proc = 0;
+ found = 1;
+ }
+ release(&p->lock);
+ }
+ if (found == 0) {
+ // nothing to run; stop running on this core until an interrupt.
+ asm volatile("wfi");
+ }
+ }
+ */
+
+// PROJECT MODIFICATION:
+// Original xv6 scheduler uses a Round Robin strategy.
+// This version implements a Priority Scheduler.
+//
+// The scheduler scans the process table and selects
+// the RUNNABLE process with the highest priority.
+//
+// Advantages:
+// - Faster response for high-priority processes.
+// - Better control over CPU allocation.
+//
+// Disadvantages:
+// - Low-priority processes may experience starvation.
 void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *selected;
   struct cpu *c = mycpu();
 
   c->proc = 0;
+
   for (;;) {
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting. Then turn them back off
-    // to avoid a possible race between an interrupt
-    // and wfi.
+
     intr_on();
     intr_off();
 
+    selected = 0;
     int found = 0;
-    for (p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if (p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+    int highest_priority = -1;
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+    // PROJECT MODIFICATION:
+    // Search for the RUNNABLE process with
+    // the highest priority value.
+    for (p = proc; p < &proc[NPROC]; p++) {
+
+      acquire(&p->lock);
+
+      if (p->state == RUNNABLE) {
+
+        if (p->priority > highest_priority) {
+
+          if (selected != 0)
+            release(&selected->lock);
+
+          selected = p;
+          highest_priority = p->priority;
+
+        } else {
+          release(&p->lock);
+        }
+
+      } else {
+        release(&p->lock);
       }
-      release(&p->lock);
     }
-    if (found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
+
+    if (selected != 0) {
+      
+      // PROJECT MODIFICATION:
+      // Execute the selected process.
+      // The process with the highest priority
+      // receives CPU time first.
+      selected->state = RUNNING;
+      c->proc = selected;
+
+      /*printk(
+        "[SCHEDULER] PID=%d PRIORITY=%d\n",
+        selected->pid,
+        selected->priority
+      );*/
+
+      swtch(&c->context, &selected->context);
+
+      c->proc = 0;
+      found = 1;
+
+      release(&selected->lock);
+    }
+
+    if (!found) {
       asm volatile("wfi");
     }
   }

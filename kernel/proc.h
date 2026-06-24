@@ -89,6 +89,12 @@ struct proc {
   int xstate;           // Exit status to be returned to parent's wait
   int pid;              // Process ID
 
+// PROJECT MODIFICATION:
+// Added process priority support.
+// The scheduler will use this value to select
+// the RUNNABLE process with the highest priority.
+int priority;
+
   // wait_lock must be held when using this:
   struct proc *parent; // Parent process
 
