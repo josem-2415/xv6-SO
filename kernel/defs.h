@@ -183,3 +183,8 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x) / sizeof((x)[0]))
+
+
+// sysproc.c
+uint64          sys_setpriority(void);
+uint64          sys_getpriority(void);
