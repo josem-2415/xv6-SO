@@ -1,0 +1,11 @@
+.git
+.gitignore
+
+*.o
+*.d
+*.img
+*.asm
+*.sym
+
+.vscode
+.idea

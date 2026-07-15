@@ -1,0 +1,15 @@
+services:
+
+  xv6:
+
+    build: .
+
+    container_name: xv6
+
+    working_dir: /workspace
+
+    volumes:
+      - .:/workspace
+
+    stdin_open: true
+    tty: true
