@@ -19,14 +19,30 @@ struct run {
 };
 
 struct {
-  struct spinlock lock;
-  struct run *freelist;
+    struct spinlock lock;
+
+    // Head of the FIFO free page list.
+    struct run *freelist;
+
+    // PROJECT MODIFICATION:
+    // Tail pointer used to implement the FIFO memory
+    // allocation policy. New free pages are appended
+    // to the end of the list, preserving the order
+    // in which they were released.
+    struct run *tail;
+
 } kmem;
 
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+
+  // PROJECT MODIFICATION:
+  // Initialize the tail pointer for the FIFO free list.
+  kmem.freelist = 0;
+  kmem.tail = 0;
+
   freerange(end, (void *)PHYSTOP);
 }
 
@@ -41,42 +57,68 @@ freerange(void *pa_start, void *pa_end)
 
 // Free the page of physical memory pointed at by pa,
 // which normally should have been returned by a
-// call to kalloc().  (The exception is when
-// initializing the allocator; see kinit above.)
+// call to kalloc().
 void
 kfree(void *pa)
 {
   struct run *r;
 
-  if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
+  if (((uint64)pa % PGSIZE) != 0 ||
+      (char *)pa < end ||
+      (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
+  // Fill with junk to catch dangling references.
   memset(pa, 1, PGSIZE);
 
   r = (struct run *)pa;
+  r->next = 0;
 
   acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
+
+  // PROJECT MODIFICATION:
+  // FIFO Memory Allocation.
+  // Insert the released page at the end of the free list.
+
+  if (kmem.tail == 0) {
+    kmem.freelist = r;
+    kmem.tail = r;
+  } else {
+    kmem.tail->next = r;
+    kmem.tail = r;
+  }
+
   release(&kmem.lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
-// Returns 0 if the memory cannot be allocated.
 void *
 kalloc(void)
 {
   struct run *r;
 
   acquire(&kmem.lock);
+
+  // PROJECT MODIFICATION:
+  // Remove the oldest available page from the
+  // beginning of the FIFO free list.
+
   r = kmem.freelist;
-  if (r)
+
+  if (r) {
     kmem.freelist = r->next;
+
+    // If the list becomes empty,
+    // reset the tail pointer.
+    if (kmem.freelist == 0)
+      kmem.tail = 0;
+  }
+
   release(&kmem.lock);
 
   if (r)
-    memset((char *)r, 5, PGSIZE); // fill with junk
+    memset((char *)r, 5, PGSIZE);
+
   return (void *)r;
 }
